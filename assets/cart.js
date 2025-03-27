@@ -37,7 +37,6 @@ class CartItems extends HTMLElement {
         this.checkDeliveryThreshold();
         this.checkGiftThreshold();
       });
-      // return this.onCartUpdate();
     });
 
     if (this.tagName === 'CART-DRAWER-ITEMS') {
@@ -53,6 +52,15 @@ class CartItems extends HTMLElement {
   }
 
   /**
+   * Configuration globale pour la gestion du produit cadeau
+   * @type {Object}
+   */
+  giftConfig = {
+    VARIANT_ID: '54439474463045',
+    THRESHOLD: 100,
+  };
+
+  /**
    * Vérifie si le panier atteint un seuil spécifique et affiche un message approprié
    * @param {Object} options - Options de configuration
    * @param {string} options.type - Type de seuil ('delivery' ou 'gift')
@@ -60,7 +68,7 @@ class CartItems extends HTMLElement {
    * @param {string} options.messageSelector - Sélecteur CSS pour le conteneur du message
    * @param {Function} options.messageFormatter - Fonction qui formate le message à afficher
    */
-  checkThreshold(options) {
+  async checkThreshold(options) {
     const { type, threshold, messageSelector, messageFormatter } = options;
 
     // Récupérer le total du panier via l'API de Shopify
@@ -135,13 +143,119 @@ class CartItems extends HTMLElement {
   /**
    * Vérifie le seuil pour le cadeau offert
    */
-  checkGiftThreshold() {
+  async checkGiftThreshold() {
     return this.checkThreshold({
       type: 'gift',
-      threshold: 100,
+      threshold: this.giftConfig.THRESHOLD,
       messageSelector: '.gift-drawer',
       messageFormatter: (remaining) => `Plus que ${remaining}€ pour recevoir un cadeau offert`,
-    });
+    }).then((cartTotal) => this.handleGiftBasedOnTotal(cartTotal));
+  }
+
+  /**
+   * Gère l'ajout ou la suppression du cadeau en fonction du total
+   * @param {number} cartTotal - Le montant total du panier
+   */
+  async handleGiftBasedOnTotal(cartTotal) {
+    try {
+      if (cartTotal >= this.giftConfig.THRESHOLD) {
+        await this.handleGiftProduct();
+      } else {
+        await this.removeGiftProduct();
+      }
+    } catch (error) {
+      console.error('Erreur lors de la gestion du cadeau:', error);
+    }
+  }
+
+  /**
+   * Vérifie si le produit cadeau est dans le panier
+   */
+  async isGiftInCart() {
+    const cartData = await this.getCartContent();
+    return cartData.items.some(
+      (item) => item.variant_id.toString() === this.giftConfig.VARIANT_ID && item.properties?._gift === true
+    );
+  }
+
+  /**
+   * Ajoute le produit cadeau si nécessaire
+   */
+  async handleGiftProduct() {
+    try {
+      if (await this.isGiftInCart()) return;
+
+      const formData = {
+        items: [
+          {
+            id: this.giftConfig.VARIANT_ID,
+            quantity: 1,
+            properties: { _gift: true },
+          },
+        ],
+      };
+
+      const response = await fetch(`${routes.cart_url}/add.js`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      });
+
+      if (response.ok) {
+        // Afficher le message
+        const messageContainer = document.querySelector('.notification');
+        if (messageContainer) {
+          messageContainer.classList.add('active');
+          const contentElement = messageContainer.querySelector('.notification__content');
+          if (contentElement) {
+            contentElement.textContent = 'Votre cadeau a été ajouté au panier !';
+          }
+        }
+
+        // Mettre à jour le panier sans recharger tout le drawer
+        const cartData = await response.json();
+        publish(PUB_SUB_EVENTS.cartUpdate, {
+          source: 'gift-auto-add',
+          cartData: cartData,
+        });
+
+        // Supprimer le message après 3 secondes
+        setTimeout(() => {
+          if (messageContainer) {
+            messageContainer.classList.remove('active');
+          }
+        }, 6000);
+      }
+    } catch (error) {
+      console.error("Erreur lors de l'ajout du cadeau:", error);
+    }
+  }
+
+  /**
+   * Trouve et supprime le produit cadeau si présent
+   */
+  async removeGiftProduct() {
+    try {
+      const cartData = await this.getCartContent();
+      const giftItem = cartData.items.find(
+        (item) => item.variant_id.toString() === this.giftConfig.VARIANT_ID && item.properties?._gift === true
+      );
+
+      if (giftItem) {
+        const index = cartData.items.indexOf(giftItem) + 1;
+        this.updateQuantity(index, 0, new Event('click'));
+      }
+    } catch (error) {
+      console.error('Erreur lors de la suppression du cadeau:', error);
+    }
+  }
+
+  /**
+   * Récupère le contenu du panier
+   */
+  async getCartContent() {
+    const response = await fetch(`${routes.cart_url}.js`);
+    return response.json();
   }
 
   resetQuantityInput(id) {

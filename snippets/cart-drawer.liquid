@@ -10,7 +10,7 @@
 
 <script src="{{ 'cart.js' | asset_url }}" defer="defer"></script>
 <script src="{{ 'quantity-popover.js' | asset_url }}" defer="defer"></script>
-
+<script src="{{ 'notification.js' | asset_url }}" defer="defer"></script>
 <style>
   .drawer {
     visibility: hidden;
@@ -564,4 +564,5 @@
       </div>
     </div>
   </div>
+  {% render 'notification' %}
 </cart-drawer>
