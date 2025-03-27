@@ -32,14 +32,116 @@ class CartItems extends HTMLElement {
       if (event.source === 'cart-items') {
         return;
       }
-      return this.onCartUpdate();
+      const result = this.onCartUpdate();
+      result.then(() => {
+        this.checkDeliveryThreshold();
+        this.checkGiftThreshold();
+      });
+      // return this.onCartUpdate();
     });
+
+    if (this.tagName === 'CART-DRAWER-ITEMS') {
+      this.checkDeliveryThreshold();
+      this.checkGiftThreshold();
+    }
   }
 
   disconnectedCallback() {
     if (this.cartUpdateUnsubscriber) {
       this.cartUpdateUnsubscriber();
     }
+  }
+
+  /**
+   * Vérifie si le panier atteint un seuil spécifique et affiche un message approprié
+   * @param {Object} options - Options de configuration
+   * @param {string} options.type - Type de seuil ('delivery' ou 'gift')
+   * @param {number} options.threshold - Montant du seuil en euros
+   * @param {string} options.messageSelector - Sélecteur CSS pour le conteneur du message
+   * @param {Function} options.messageFormatter - Fonction qui formate le message à afficher
+   */
+  checkThreshold(options) {
+    const { type, threshold, messageSelector, messageFormatter } = options;
+
+    // Récupérer le total du panier via l'API de Shopify
+    return fetch(`${routes.cart_url}.js`)
+      .then((response) => response.json())
+      .then((cart) => {
+        const cartTotal = cart.total_price / 100; // Convertir de centimes à euros
+
+        if (cartTotal < threshold) {
+          const messageContainer = document.querySelector(messageSelector);
+          if (messageContainer) {
+            messageContainer.classList.remove('hidden');
+            const remaining = (threshold - cartTotal).toFixed(2);
+            const message = messageFormatter(remaining);
+
+            // Mettre à jour le contenu du message
+            const contentElement =
+              messageContainer.querySelector(`.${type}-message__content`) ||
+              messageContainer.querySelector('.message-drawer__content');
+            if (contentElement) {
+              contentElement.textContent = message;
+            }
+
+            // S'assurer d'ajouter l'écouteur d'événement une seule fois
+            const button =
+              messageContainer.querySelector(`.${type}-message__button`) ||
+              messageContainer.querySelector('.message-drawer__button');
+            if (button) {
+              button.removeEventListener('click', this.hideMessage);
+              button.addEventListener('click', () => this.hideMessage(messageSelector));
+            }
+          }
+        } else {
+          // Cacher le message si le seuil est atteint
+          const messageContainer = document.querySelector(messageSelector);
+          if (messageContainer) {
+            messageContainer.classList.add('hidden');
+          }
+        }
+
+        return cartTotal; // Retourner le total pour une utilisation ultérieure si nécessaire
+      })
+      .catch((e) => {
+        console.error(`Erreur lors de la vérification du seuil de ${type}:`, e);
+        return 0;
+      });
+  }
+
+  /**
+   * Cache un conteneur de message
+   * @param {string} selector - Sélecteur CSS du conteneur à cacher
+   */
+  hideMessage(selector) {
+    const messageContainer = document.querySelector(selector);
+    if (messageContainer) {
+      messageContainer.classList.add('hidden');
+    }
+  }
+
+  /**
+   * Vérifie le seuil pour la livraison gratuite
+   */
+  checkDeliveryThreshold() {
+    return this.checkThreshold({
+      type: 'delivery',
+      threshold: 50,
+      messageSelector: '.delivery-drawer',
+      messageFormatter: (remaining) => `Plus que ${remaining}€ pour bénéficier de la livraison gratuite`,
+    });
+  }
+
+  /**
+   * Vérifie le seuil pour le cadeau offert
+   */
+  checkGiftThreshold() {
+    return this.checkThreshold({
+      type: 'gift',
+      threshold: 100,
+      messageSelector: '.gift-drawer',
+      messageFormatter: (remaining) => `Plus que ${remaining}€ pour recevoir un cadeau offert`,
+    });
   }
 
   resetQuantityInput(id) {
@@ -182,7 +284,8 @@ class CartItems extends HTMLElement {
 
           this.getSectionsToRender().forEach((section) => {
             const elementToReplace =
-              document.getElementById(section.id).querySelector(section.selector) || document.getElementById(section.id);
+              document.getElementById(section.id).querySelector(section.selector) ||
+              document.getElementById(section.id);
             elementToReplace.innerHTML = this.getSectionInnerHTML(
               parsedState.sections[section.section],
               section.selector
@@ -215,6 +318,9 @@ class CartItems extends HTMLElement {
         CartPerformance.measureFromEvent(`${eventTarget}:user-action`, event);
 
         publish(PUB_SUB_EVENTS.cartUpdate, { source: 'cart-items', cartData: parsedState, variantId: variantId });
+
+        this.checkDeliveryThreshold();
+        this.checkGiftThreshold();
       })
       .catch(() => {
         this.querySelectorAll('.loading__spinner').forEach((overlay) => overlay.classList.add('hidden'));
@@ -284,8 +390,9 @@ if (!customElements.get('cart-note')) {
           'input',
           debounce((event) => {
             const body = JSON.stringify({ note: event.target.value });
-            fetch(`${routes.cart_update_url}`, { ...fetchConfig(), ...{ body } })
-              .then(() => CartPerformance.measureFromEvent('note-update:user-action', event));
+            fetch(`${routes.cart_update_url}`, { ...fetchConfig(), ...{ body } }).then(() =>
+              CartPerformance.measureFromEvent('note-update:user-action', event)
+            );
           }, ON_CHANGE_DEBOUNCE_TIMER)
         );
       }
