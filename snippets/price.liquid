@@ -13,6 +13,7 @@
   {% render 'price', product: product %}
 {% endcomment %}
 {%- liquid
+  # Détermine la cible du prix (variant ou produit)
   if use_variant
     assign target = product.selected_or_first_available_variant
   elsif placeholder
@@ -21,11 +22,14 @@
     assign target = product
   endif
 
+  # Initialisation des variables de prix de base
   assign compare_at_price = target.compare_at_price
   assign price = target.price | default: 1999
   assign price_min = product.price_min
   assign price_max = product.price_max
   assign available = target.available | default: false
+
+  # Formatage des prix avec ou sans code de devise
   assign money_price = price | money
   assign money_price_min = price_min | money
   assign money_price_max = price_max | money
@@ -35,8 +39,42 @@
     assign money_price_max = price_max | money_with_currency
   endif
 
+  # Gestion des prix variables
   if target == product and product.price_varies
     assign money_price = 'products.product.price.from_price_html' | t: price: money_price
+  endif
+
+  # Récupération des informations de promotion depuis les metafields de la collection
+  for collection in product.collections
+    if collection.metafields.custom.promotions != blank
+      assign collection_discount = collection.metafields.custom.promotions
+      assign titre_promotion = collection.metafields.custom.titre_promotion
+      break
+    endif
+  endfor
+
+  # Calcul du prix remisé si une promotion est active
+  if collection_discount != blank
+    # Conversion du pourcentage en décimal et calcul du multiplicateur
+    assign discount_decimal = collection_discount | divided_by: 100.0
+    assign multiplier = 1 | minus: discount_decimal
+    # Application de la remise
+    assign discounted_price = price | times: multiplier
+    # Formatage des prix avec ou sans code de devise
+    if settings.currency_code_enabled
+      assign money_price = discounted_price | money_with_currency
+      assign original_money_price = price | money_with_currency
+    else
+      assign money_price = discounted_price | money
+      assign original_money_price = price | money
+    endif
+  else
+    # Si pas de promotion, formatage standard du prix
+    if settings.currency_code_enabled
+      assign money_price = price | money_with_currency
+    else
+      assign money_price = price | money
+    endif
   endif
 -%}
 
@@ -59,30 +97,36 @@
           - div.price__sale: Displayed when a variant is a sale
       {%- endcomment -%}
       <div class="price__regular">
-        {%- if product.quantity_price_breaks_configured? -%}
-          {%- if show_compare_at_price and compare_at_price -%}
-            {%- unless product.price_varies == false and product.compare_at_price_varies %}
-              <span class="visually-hidden visually-hidden--inline">
-                {{- 'products.product.price.regular_price' | t -}}
-              </span>
-              <span>
-                <s class="price-item price-item--regular variant-item__old-price">
-                  {% if settings.currency_code_enabled %}
-                    {{ compare_at_price | money_with_currency }}
-                  {% else %}
-                    {{ compare_at_price | money }}
-                  {% endif %}
-                </s>
-              </span>
-            {%- endunless -%}
-          {%- endif -%}
-          <span class="visually-hidden visually-hidden--inline">{{ 'products.product.price.regular_price' | t }}</span>
-          <span class="price-item price-item--regular">
-            {{-
-              'products.product.volume_pricing.price_range'
-              | t: minimum: money_price_min, maximum: money_price_max
-            -}}
-          </span>
+        {%- if collection_discount != blank -%}
+          <div class="cart-item__discounted-prices">
+            {%- if titre_promotion != blank -%}
+              {%- comment -%}
+                Structure de la promotion similaire au cart-drawer :
+                - Utilise la même liste non-stylée
+                - Inclut l'icône de réduction, le titre et le pourcentage
+                - Garde les mêmes classes CSS pour la cohérence visuelle
+              {%- endcomment -%}
+              <ul class="discounts list-unstyled" role="list" aria-label="{{ 'customer.order.discount' | t }}">
+                <li class="discounts__discount discounts__discount--end">
+                  {{- 'icon-discount.svg' | inline_asset_content -}}
+                  {{ titre_promotion }}
+                  (-{{ collection_discount }}%)
+                </li>
+              </ul>
+            {%- endif -%}
+            <span class="visually-hidden">
+              {{ 'products.product.price.regular_price' | t }}
+            </span>
+            <s class="cart-item__old-price product-option">
+              {{- original_money_price -}}
+            </s>
+            <span class="visually-hidden">
+              {{ 'products.product.price.sale_price' | t }}
+            </span>
+            <strong class="cart-item__final-price product-option">
+              {{ money_price }}
+            </strong>
+          </div>
         {%- else -%}
           <span class="visually-hidden visually-hidden--inline">{{ 'products.product.price.regular_price' | t }}</span>
           <span class="price-item price-item--regular">
