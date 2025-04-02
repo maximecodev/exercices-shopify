@@ -2,6 +2,8 @@
 
 ## Exercices Réalisés
 
+Lien : https://vppcp1-d4.myshopify.com/collections/all
+
 ### 1. Gestion des Prix et Promotions
 Modification de l'affichage des prix avec gestion des promotions automatiques :
 - Affichage du prix barré et prix remisé
