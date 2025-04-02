@@ -2,7 +2,7 @@
 
 ## Exercices Réalisés
 
-Lien : https://vppcp1-d4.myshopify.com/collections/all
+Lien : https://vppcp1-d4.myshopify.com/collections/produits
 
 ### 1. Gestion des Prix et Promotions
 Modification de l'affichage des prix avec gestion des promotions automatiques :
