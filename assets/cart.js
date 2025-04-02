@@ -56,7 +56,7 @@ class CartItems extends HTMLElement {
    * @type {Object}
    */
   giftConfig = {
-    VARIANT_ID: '54480216752453',
+    VARIANT_ID: '54480217440581',
     THRESHOLD: 100,
   };
 
